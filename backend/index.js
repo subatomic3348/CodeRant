@@ -6,7 +6,7 @@ const fs = require("fs")
 const fsPromises = require('fs').promises
 app.post('/run',async(req,res)=>{
     const code = req.body.code
-    const filePath = `/home/subatomic/codeRant/backend/temp${Date.now()}.py`
+    const filePath = `./temp-${Date.now()}.py`
     try{
      const data = await runCodeFile(code,filePath)
       console.log(`data:${data}`);
