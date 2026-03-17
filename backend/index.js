@@ -3,18 +3,40 @@ const app = express()
 app.use(express.json())
 const { spawn } = require('node:child_process')
 const fs = require("fs")
+const { exit } = require('node:process')
+const test = require('node:test')
+const { file } = require('zod')
+const { type } = require('node:os')
 const fsPromises = require('fs').promises
+const langauges = require('./utils/language')
+const runTestCase = require('./tests-runner')
+const languages = require('./utils/language')
 app.post('/run',async(req,res)=>{
     const code = req.body.code
-    const filePath = `./temp-${Date.now()}.py`
+   const l = req.body.l;
+  
+    
+    
+    
+    const filePath = `./temp-${Date.now()}${langauges[l].extension}`
+
+    const outputPath = `./temp1-${Date.now()}`
+
     try{
-     const data = await runCodeFile(code,filePath)
-      console.log(`data:${data}`);
-      fs.unlinkSync(filePath)
-      
-       return res.json({
-        result:data
-       })
+      await fsPromises.writeFile(
+                filePath, code, {
+            encoding: "utf8",
+            flag: "w",
+            mode: 0o666
+        });
+       
+    const data = await runTestCase(filePath,l,outputPath)
+    
+
+    return res.json({
+        output:data
+    })
+
     }
     catch(e){
      console.log(e);
@@ -23,69 +45,38 @@ app.post('/run',async(req,res)=>{
       })
      
     }
+    finally{
+         fs.unlink(filePath,(err)=>{
+            if(err){
+                console.log('file couldnot be deleted');
+                 console.error(err)
+
+                
+            }
+            else{
+                console.log(`${filePath} is deleted after program ran`);
+                
+            }
+
+        })
+        if(languages[l].compile){
+        fs.unlink(outputPath, (err)=>{
+            if(err) {
+                console.log('binary file cannot be deleted');
+                console.log(err);
+                
+            }
+            else{
+                console.log('binary file also deleted suck on that');
+                
+            }
+            
+        })
+        }
+
+    }
    
 })
-
-
-async function runCodeFile(code,filePath) {
-
-    try {
-
-        await fsPromises.writeFile(
-                filePath, code, {
-            encoding: "utf8",
-            flag: "w",
-            mode: 0o666
-        });
-
-        console.log("File written successfully\n");
-        console.log("The written has the "
-                + "following contents:");
-
-   return new Promise((resolve,reject)=>{ 
-     let stream = ""
-     let finished = false
-        const process = spawn('python3',[filePath])
-        const timeout = setTimeout(()=>{
-            if(finished) return
-             finished = true
-            process.kill('SIGKILL')
-            reject(new Error('Time limit exceeded'))
-        },2000)
-     process.stdout.on('data',(data)=>{
-        stream+=data
-        console.log(`stdout:${data}`);
-
-        
-     }) 
-     process.stderr.on('data',(data)=>{
-        console.log(`stderr:${data}`);
-       
-           
-     })
-     process.on('close',(code)=>{
-        if(finished) return
-        finished = true
-        clearTimeout(timeout)
-        if(code!==0){
-                reject(new Error(`python process exited with ${code}`))
-                    
-        }
-        console.log(stream);
-        
-        resolve(stream)
-       
-     }) 
-            
-        
-    })        
-
-       
-    }
-    catch (err) {
-        console.error(err);
-    }
-};
 
 
 app.listen(3000,()=>{
