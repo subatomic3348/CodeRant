@@ -4,82 +4,123 @@ app.use(express.json())
 const { spawn } = require('node:child_process')
 const fs = require("fs")
 const { exit } = require('node:process')
-const test = require('node:test')
-const { file } = require('zod')
-const { type } = require('node:os')
 const fsPromises = require('fs').promises
 const langauges = require('./utils/language')
 const runTestCase = require('./tests-runner')
 const languages = require('./utils/language')
-app.post('/run',async(req,res)=>{
-    const code = req.body.code
-   const l = req.body.l;
+const Redis = require('ioredis')
+
+const redis = new Redis()
+
+
+
+
+
+
+
+
+app.post('/submit',async(req,res)=>{
+ const jobId = crypto.randomUUID()
+ const job = {
+    id:jobId,
+    code:req.body.code,
+    language:req.body.language,
+    status:"PENDING",
+    result:null
+ }
+ 
+  redis.set(jobId,JSON.stringify(job))
+  console.log('job added');
+ await   redis.lpush("JobQueue",jobId)
+  
+  
+  
+   res.json({
+    jobId
+    
+  })
+  
+})
+ const worker = async ()=>{
+    
+      
+  console.log('Worker A running');
   
     
+   
+        const task = await redis.rpop("JobQueue")
+        console.log(task);
+        
+        console.log('Woker A picked', task);
+        
+        if(!task) return
+        const getJob = await redis.get(task)
+        console.log(getJob);
+        
+        
+        if(!getJob){
+            console.log('worker picked job but no job found');
+            
+        }
+        const execution = JSON.parse(getJob)
+
+        
+        execution.status = "RUNNING"
+        const lang = execution.language
+        const code = execution.code
+        const id = execution.id
+      const file = `./temp-${id}${languages[lang].extension}`
+      const binaryFile = `./temp-1${id}`
+        await fs.promises.writeFile(file,code,{
+            encoding:"utf-8"
+        })
+        try{
+        const answer = await runTestCase(file,lang,binaryFile)
+        execution.status = "COMPLETED"
+        execution.result = answer
+        console.log(answer);
+        }
+        
     
-    
-    const filePath = `./temp-${Date.now()}${langauges[l].extension}`
-
-    const outputPath = `./temp1-${Date.now()}`
-
-    try{
-      await fsPromises.writeFile(
-                filePath, code, {
-            encoding: "utf8",
-            flag: "w",
-            mode: 0o666
-        });
-       
-    const data = await runTestCase(filePath,l,outputPath)
-    
-
-    return res.json({
-        output:data
-    })
-
-    }
     catch(e){
-     console.log(e);
-      return res.status(400).json({
-        message:'error while running the code'
-      })
-     
+        execution.status = "FAILED",
+        execution.result = {
+            status:"SYSTEM_ERROR",
+            error:e
+        }
+      
+
     }
     finally{
-         fs.unlink(filePath,(err)=>{
+        fs.unlink(file,err=>{
             if(err){
-                console.log('file couldnot be deleted');
-                 console.error(err)
-
+                console.log('error while deleting code file');
                 
             }
             else{
-                console.log(`${filePath} is deleted after program ran`);
+                console.log(`${file} deleted`);
                 
             }
-
         })
-        if(languages[l].compile){
-        fs.unlink(outputPath, (err)=>{
-            if(err) {
-                console.log('binary file cannot be deleted');
-                console.log(err);
-                
-            }
-            else{
-                console.log('binary file also deleted suck on that');
-                
-            }
+        if(langauges[lang].compile){
+            fs.unlinkSync(binaryFile)
+            console.log('binary file deleted');
             
-        })
         }
-
     }
-   
-})
+    
+
+}
 
 
-app.listen(3000,()=>{
-    console.log('app is listening on port 3000');
+setInterval(worker
+,1000)
+
+
+
+const port1 = 3001
+
+app.listen(port1,()=>{
+    console.log(`app is listening on port ${port1}`);
     
 })

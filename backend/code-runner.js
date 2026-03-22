@@ -8,6 +8,7 @@ async function runCodeFile(filePath,input,langauge,outputPath) {
 
         return new Promise((resolve,reject)=>{ 
      let stream = ""
+     let errorOutput="";
      let finished = false
      let runArg = filePath;
      
@@ -24,7 +25,11 @@ async function runCodeFile(filePath,input,langauge,outputPath) {
             if(finished) return
              finished = true
             pythonProcess.kill('SIGKILL')
-            reject(new Error('Time limit exceeded'))
+            // reject(new Error('Time limit exceeded'))
+         return   resolve({
+               status:'TIME_LIMIT_EXCEEDED',
+               error: 'execution took too long'
+            })
         },10000)
    pythonProcess.stdin.write(input)
    pythonProcess.stdin.end()
@@ -34,21 +39,41 @@ async function runCodeFile(filePath,input,langauge,outputPath) {
         
      }) 
      pythonProcess.stderr.on('data',(data)=>{
+      errorOutput+=data
         console.log(`stderr:${data}`);
        
            
      })
+     pythonProcess.on('error', (err) => {
+    if(finished) return
+    finished = true
+    clearTimeout(timeout)
+
+    resolve({
+        status: "SYSTEM_ERROR",
+        error: err
+    })
+})
      pythonProcess.on('close',(code)=>{
         if(finished) return
         finished = true
         clearTimeout(timeout)
         if(code!==0){
-                reject(new Error(`python process exited with ${code}`))
+         console.log(`program exited with ${code}`);
+                return resolve({
+                  status:'RUNTIME_ERROR',
+                  error:errorOutput
+                })
+                
+                
                     
         }
         console.log(stream);
         
-        resolve(stream)
+        resolve({
+          status:'SUCCESS',
+           result:stream
+        })
         
        
      }) 
@@ -57,6 +82,11 @@ async function runCodeFile(filePath,input,langauge,outputPath) {
     }
     catch (err) {
         console.error(err);
+        return {
+         status:"SYSTEM_ERROR",
+         error:err || "UNKNOWN_ERROR"
+        }
+
     }
 };
 module.exports = runCodeFile

@@ -3,7 +3,12 @@ const { spawn } = require('node:child_process')
 async function compilationProcess(lang,filePath,outputPath){
     console.log(outputPath+"inside compilation");
     
-    if(!lang.compile)return;
+    if(!lang.compile){
+        return {
+            status:"SUCCESS"
+        }
+    }
+    
     return new Promise((resolve,reject)=>{
         const [cmd,args] = lang.compile(filePath,outputPath)
         const compileProcess = spawn(cmd,args)
@@ -13,8 +18,8 @@ async function compilationProcess(lang,filePath,outputPath){
         })
         compileProcess.on("close",(code)=>{
             if(code!==0){
-                return reject({
-                    type:"COMPILE_ERROR",
+                return resolve({
+                    status:"COMPILE_ERROR",
                     error:errOutput
                 })
             }

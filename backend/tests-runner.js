@@ -7,18 +7,24 @@ const { spawn } = require('node:child_process')
 async function runTestCase(file,langauge,outputPath){  
     
      const lang = languages[langauge]
-   await compilationProcess(lang,file,outputPath)
-
+ const compileCode =   await compilationProcess(lang,file,outputPath)
+  if(compileCode&&compileCode.status==="COMPILE_ERROR"){
+    return compileCode
+  }
  
     for(let i =0;i<tests.length;i++){
         const output = await runCodeFile(file,tests[i].input,langauge,outputPath)
-        if(output.trim()!=tests[i].expected.trim()){
+        if(output.status!='SUCCESS'){
+            return output
+        }
+        const answer = output.result || ""
+        if(answer.trim()!=tests[i].expected.trim()){
             return {
-                status:"wrong answer",
-                failedTest:tests.length+i,
+                status:"WRONG_ANSWER",
+                failedTest:i,
                 input:tests[i].input,
                 expected:tests[i].expected,
-                got:output
+                got:answer
                 
 
             }
@@ -26,7 +32,7 @@ async function runTestCase(file,langauge,outputPath){
        
     }
     return {
-     status:"all test passed",
+     status:"SUCCESS",
      passed:tests.length,
      total:tests.length
 
