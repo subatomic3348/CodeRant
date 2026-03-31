@@ -21,7 +21,7 @@ async function runTestCase(file,langauge,outputPath){
         if(answer.trim()!=tests[i].expected.trim()){
             return {
                 status:"WRONG_ANSWER",
-                failedTest:i,
+                failedTest:i+1,
                 input:tests[i].input,
                 expected:tests[i].expected,
                 got:answer

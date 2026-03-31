@@ -3,96 +3,143 @@ const app = express()
 app.use(express.json())
 const { spawn } = require('node:child_process')
 const fs = require("fs")
-const { exit } = require('node:process')
 const fsPromises = require('fs').promises
 const langauges = require('./utils/language')
 const runTestCase = require('./tests-runner')
 const languages = require('./utils/language')
 const Redis = require('ioredis')
 
-const redis = new Redis()
+const clientRedis = new Redis()
+const workerRedis = new Redis()
 
-
-
-
-
-
-
-
+const MAX_RETRY = 3
+const TIME_OUT = 10000
 app.post('/submit',async(req,res)=>{
+    
+
  const jobId = crypto.randomUUID()
+ console.log(jobId);
+ 
  const job = {
     id:jobId,
     code:req.body.code,
     language:req.body.language,
     status:"PENDING",
-    result:null
+    result:null,
+    startedAt:null,
+    attempts:0,
+    lastHeartBeat:null
  }
  
-  redis.set(jobId,JSON.stringify(job))
-  console.log('job added');
- await   redis.lpush("JobQueue",jobId)
-  
-  
-  
-   res.json({
-    jobId
-    
-  })
+console.log("STEP 1");
+
+await clientRedis.set(jobId, JSON.stringify(job))
+
+console.log("STEP 2");
+
+await clientRedis.lpush("JobQueue", jobId)
+
+console.log("STEP 3");
+
+res.json({ job: jobId })
   
 })
  const worker = async ()=>{
+    let heartBeatInterval;
     
-      
   console.log('Worker A running');
-  
-    
+  while(true){
+     
+      let file = ""
+      let binaryFile = ""
+       let lang = ""
+       let code = ""
+       let id = ""
+  try {
+
+   console.log('hi');
    
-        const task = await redis.rpop("JobQueue")
+    
+        const task = await workerRedis.brpoplpush("JobQueue","ProcessingQueue",0)
         console.log(task);
         
         console.log('Woker A picked', task);
         
-        if(!task) return
-        const getJob = await redis.get(task)
+        if(!task) continue
+        const getJob = await workerRedis.get(task)
         console.log(getJob);
         
         
         if(!getJob){
             console.log('worker picked job but no job found');
+            continue
             
         }
         const execution = JSON.parse(getJob)
-
-        
+        if(execution.status==="COMPLETED"){
+            await workerRedis.lrem("ProcessingQueue",1,task)
+            continue
+        }
+         if(execution.attempts>MAX_RETRY){
+            execution.status = "DEAD"
+            await workerRedis.set(task,JSON.stringify(execution))
+            await workerRedis.lrem("ProcessingQueue",1,task)
+            await workerRedis.rpush("deadLetterQueue",task)
+            continue
+         }
+         execution.attempts = (execution.attempts||0)+1
         execution.status = "RUNNING"
-        const lang = execution.language
-        const code = execution.code
-        const id = execution.id
-      const file = `./temp-${id}${languages[lang].extension}`
-      const binaryFile = `./temp-1${id}`
+        execution.startedAt = Date.now()
+        execution.lastHeartBeat = Date.now()
+       
+        const runningExecution = JSON.stringify(execution)
+        await workerRedis.set(task,runningExecution)
+
+        lang = execution.language
+         code = execution.code
+         id = execution.id
+       file = `./temp-${id}${languages[lang].extension}`
+       binaryFile = `./temp-1${id}`
         await fs.promises.writeFile(file,code,{
             encoding:"utf-8"
         })
-        try{
+
+        
+         heartBeatInterval = setInterval(async()=>{
+                execution.lastHeartBeat = Date.now()
+                await workerRedis.set(task,JSON.stringify(execution))
+
+            },3000)
         const answer = await runTestCase(file,lang,binaryFile)
+        execution.lastHeartBeat = Date.now()
         execution.status = "COMPLETED"
         execution.result = answer
+        
+        const completeExecution = JSON.stringify(execution)
+        await workerRedis.set(task,completeExecution)
+        await workerRedis.lrem("ProcessingQueue",1,task)
         console.log(answer);
         }
         
     
     catch(e){
-        execution.status = "FAILED",
+         console.error("Worker error:", e)
+
+    if (execution) {
+        execution.status = "FAILED"
         execution.result = {
             status:"SYSTEM_ERROR",
             error:e
         }
+        }
+        await workerRedis.set(task,JSON.stringify(execution))
+       
       
 
     }
     finally{
-        fs.unlink(file,err=>{
+        clearInterval(heartBeatInterval)
+        fs.unlink(file,(err)=>{
             if(err){
                 console.log('error while deleting code file');
                 
@@ -102,25 +149,53 @@ app.post('/submit',async(req,res)=>{
                 
             }
         })
-        if(langauges[lang].compile){
-            fs.unlinkSync(binaryFile)
-            console.log('binary file deleted');
+        if( lang && langauges[lang].compile){
+            fs.unlink(binaryFile,(err)=>{
+                if(err){
+                console.log('error while deleting binary file');
+                }
+                else{
+                    console.log('binary file deleted');
+                }
+            })
+            
             
         }
     }
     
-
+  }
+}
+const recoveryWorker = async ()=>{
+    const jobs = await workerRedis.lrange("ProcessingQueue",0,-1)
+    for(const jobId of jobs){
+        const data = await workerRedis.get(jobId)
+        if(!data)continue
+        const job = JSON.parse(data)
+        if(Date.now()-job.lastHeartBeat>TIME_OUT){
+            await workerRedis.lrem("ProcessingQueue",1,jobId)
+            await workerRedis.lpush("JobQueue",jobId)
+        }
+    }
 }
 
 
-setInterval(worker
-,1000)
 
+worker()
+setInterval(recoveryWorker,5000)
 
+app.get('/result/:id',async(req,res)=>{
+    const job = await workerRedis.get(req.params.id)
+    if(!job){
+        return res.json({
+            message:'job not found'
+        })
+    }
+    res.json(JSON.parse(job))
+})
 
-const port1 = 3001
+const port = 3000
 
-app.listen(port1,()=>{
-    console.log(`app is listening on port ${port1}`);
+app.listen(port,()=>{
+    console.log(`app is listening on port ${port}`);
     
 })

@@ -20,31 +20,36 @@ async function runCodeFile(filePath,input,langauge,outputPath) {
     
      const [cmd,args] = lang.run(runArg)
      
-        const pythonProcess = spawn(cmd,args)
+        const codeProcess = spawn(cmd,args,{
+         detached:true
+        })
         const timeout = setTimeout(()=>{
             if(finished) return
              finished = true
-            pythonProcess.kill('SIGKILL')
-            // reject(new Error('Time limit exceeded'))
+            pythonProcess.kill(-codeProcess.pid,'SIGKILL')
+           
          return   resolve({
                status:'TIME_LIMIT_EXCEEDED',
                error: 'execution took too long'
             })
         },10000)
-   pythonProcess.stdin.write(input)
-   pythonProcess.stdin.end()
-   pythonProcess.stdout.on('data',(data)=>{
+        if(input){
+         codeProcess.stdin.write(input)
+        }
+   
+   codeProcess.stdin.end()
+   codeProcess.stdout.on('data',(data)=>{
         stream+=data
         console.log(`stdout:${data}`);
         
      }) 
-     pythonProcess.stderr.on('data',(data)=>{
+     codeProcess.stderr.on('data',(data)=>{
       errorOutput+=data
         console.log(`stderr:${data}`);
        
            
      })
-     pythonProcess.on('error', (err) => {
+     codeProcess.on('error', (err) => {
     if(finished) return
     finished = true
     clearTimeout(timeout)
@@ -54,7 +59,7 @@ async function runCodeFile(filePath,input,langauge,outputPath) {
         error: err
     })
 })
-     pythonProcess.on('close',(code)=>{
+     codeProcess.on('close',(code)=>{
         if(finished) return
         finished = true
         clearTimeout(timeout)
