@@ -98,11 +98,11 @@ res.json({ job: jobId })
         lang = execution.language
          code = execution.code
          id = execution.id
-       file = `./temp-${id}${languages[lang].extension}`
-       binaryFile = `./temp-1${id}`
-        await fs.promises.writeFile(file,code,{
-            encoding:"utf-8"
-        })
+    //    file = `./temp-${id}${languages[lang].extension}`
+    //    binaryFile = `./temp-1${id}`
+    //     await fs.promises.writeFile(file,code,{
+    //         encoding:"utf-8"
+    //     })
 
         
          heartBeatInterval = setInterval(async()=>{
@@ -110,7 +110,7 @@ res.json({ job: jobId })
                 await workerRedis.set(task,JSON.stringify(execution))
 
             },3000)
-        const answer = await runTestCase(file,lang,binaryFile)
+        const answer = await runTestCase(code,lang)
         execution.lastHeartBeat = Date.now()
         execution.status = "COMPLETED"
         execution.result = answer
@@ -139,28 +139,28 @@ res.json({ job: jobId })
     }
     finally{
         clearInterval(heartBeatInterval)
-        fs.unlink(file,(err)=>{
-            if(err){
-                console.log('error while deleting code file');
+        // fs.unlink(file,(err)=>{
+        //     if(err){
+        //         console.log('error while deleting code file');
                 
-            }
-            else{
-                console.log(`${file} deleted`);
+        //     }
+        //     else{
+        //         console.log(`${file} deleted`);
                 
-            }
-        })
-        if( lang && langauges[lang].compile){
-            fs.unlink(binaryFile,(err)=>{
-                if(err){
-                console.log('error while deleting binary file');
-                }
-                else{
-                    console.log('binary file deleted');
-                }
-            })
+        //     }
+        // })
+        // if( lang && langauges[lang].compile){
+        //     fs.unlink(binaryFile,(err)=>{
+        //         if(err){
+        //         console.log('error while deleting binary file');
+        //         }
+        //         else{
+        //             console.log('binary file deleted');
+        //         }
+        //     })
             
             
-        }
+        // }
     }
     
   }
